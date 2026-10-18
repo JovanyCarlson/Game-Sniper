@@ -1,5 +1,26 @@
 {
-  "scan": {"roblox_limit": 110, "steam_limit": 35, "candidate_limit": 450, "new_per_cycle": 40, "steam_details_per_cycle": 7},
-  "alerts": {"primary_window": "1h", "minimum_player_gain": 35, "minimum_growth_percent": 60, "cooldown_minutes": 120, "include_scout": true},
-  "watchlist": {"roblox_universe_ids": [], "roblox_place_ids": [], "steam_app_ids": []}
+  "discovery": {
+    "roblox_max_age_days": 30,
+    "steam_max_age_days": 30,
+    "max_active_players": 15000
+  },
+  "scan": {
+    "roblox_limit": 110,
+    "steam_limit": 45,
+    "candidate_limit": 450,
+    "new_per_cycle": 55,
+    "steam_details_per_cycle": 15
+  },
+  "alerts": {
+    "primary_window": "1h",
+    "minimum_player_gain": 35,
+    "minimum_growth_percent": 60,
+    "cooldown_minutes": 120,
+    "include_scout": true
+  },
+  "watchlist": {
+    "roblox_universe_ids": [],
+    "roblox_place_ids": [],
+    "steam_app_ids": []
+  }
 }

@@ -5,11 +5,12 @@ import asyncio, random, re, uuid, json
 from datetime import datetime, timezone
 import httpx
 from bs4 import BeautifulSoup
+from .freshness import parse_date, recent
 
 HEADERS={'User-Agent':'GameSniper/2.0 (open-source game statistics monitor)',
          'Accept':'application/json,text/html;q=0.9,*/*;q=0.8','Accept-Language':'en-US,en;q=0.9'}
 TIMEOUT=httpx.Timeout(14,connect=6)
-TERMS=['simulator','obby','survival','tycoon','horror','steal','tower','racing','escape','new','brainrot','clicker']
+TERMS=['simulator','obby','survival','tycoon','horror','steal','tower','racing','escape','brainrot','clicker','fishing','rpg','pvp','anime','adventure','incremental','parkour','idle','minigame']
 
 def discover_universes(obj):
     found={}
@@ -28,33 +29,46 @@ def discover_universes(obj):
     walk(obj)
     return list(found.values())
 
-async def roblox_discovery(client, limit=180):
+async def roblox_discovery(client, limit=220):
+    """Broader early-candidate search; no top-playing/top-grossing charts.
+
+    Roblox discovery APIs are relevance-based, not a complete chronological index.
+    We validate each returned universe's real creation date in the engine.
+    """
     errors=[];games={};session=str(uuid.uuid4())
     try:
-        r=await client.get('https://apis.roblox.com/explore-api/v1/get-sorts',params={'sessionId':session,'device':'computer','country':'all'})
-        r.raise_for_status(); sorts=[]
+        r=await client.get('https://apis.roblox.com/explore-api/v1/get-sorts',
+                           params={'sessionId':session,'device':'computer','country':'all'})
+        r.raise_for_status();sorts=[]
         def find_sorts(value,depth=0):
             if depth>8:return
             if isinstance(value,dict):
-                x=value.get('sortId')
-                if x and str(x) not in sorts:sorts.append(str(x))
+                sid=value.get('sortId')
+                if sid:
+                    label=' '.join(str(value.get(x) or '') for x in ('name','title','displayName','sortName','description','slug','sortId')).lower()
+                    # Explicitly avoid large-chart feeds. They select established hits.
+                    if any(word in label for word in ('up-and-coming','up and coming','hidden gem','new experience','new &','rising','fresh')):
+                        sorts.append(str(sid))
                 for v in value.values():
                     if isinstance(v,(list,dict)):find_sorts(v,depth+1)
             elif isinstance(value,list):
-                for v in value[:80]:find_sorts(v,depth+1)
+                for v in value[:100]:find_sorts(v,depth+1)
         find_sorts(r.json())
-        favorites=['top-trending','top-trending-now','top-playing-now','top-rated','up-and-coming']
-        ordered=sorted(sorts,key=lambda s:(s not in favorites,s))[:7]
-        for sort in ordered:
+        for sort in list(dict.fromkeys(sorts))[:5]:
             try:
-                r=await client.get('https://apis.roblox.com/explore-api/v1/get-sort-content',params={'sessionId':session,'sortId':sort})
+                r=await client.get('https://apis.roblox.com/explore-api/v1/get-sort-content',
+                                   params={'sessionId':session,'sortId':sort})
                 r.raise_for_status()
                 for item in discover_universes(r.json()):games[item['gid']]=item
-            except (httpx.HTTPError,ValueError) as exc:errors.append('Roblox chart '+sort+': '+str(exc)[:95])
+            except (httpx.HTTPError,ValueError) as exc:errors.append('Roblox emerging sort '+sort+': '+str(exc)[:95])
     except (httpx.HTTPError,ValueError) as exc:errors.append('Roblox discovery: '+str(exc)[:95])
-    for term in random.sample(TERMS,3):
+    # Rotate searches to surface games outside established discover charts.
+    # Date filtering happens only against real Roblox created timestamps downstream.
+    terms=random.sample(TERMS, min(len(TERMS),6))
+    for term in [f'new {t}' for t in terms[:4]]+terms[4:]:
         try:
-            r=await client.get('https://apis.roblox.com/search-api/omni-search',params={'SearchQuery':term,'SessionId':session})
+            r=await client.get('https://apis.roblox.com/search-api/omni-search',
+                               params={'SearchQuery':term,'SessionId':session})
             r.raise_for_status()
             for item in discover_universes(r.json()):games[item['gid']]=item
         except (httpx.HTTPError,ValueError) as exc:errors.append('Roblox search: '+str(exc)[:95])
@@ -92,24 +106,37 @@ async def roblox_metrics(client, ids):
         except (httpx.HTTPError,ValueError,KeyError) as exc:errors.append('Roblox votes: '+str(exc)[:80])
     return found,errors
 
-async def steam_discovery(client,limit=120):
-    games={};errors=[]
-    # Limited HTML-based candidate discovery from Steam's own store search, not SteamDB.
-    for params in ({'sort_by':'Released_DESC','category1':'998','ignore_preferences':'1'},
-                   {'filter':'popularnew','category1':'998','ignore_preferences':'1'}):
+async def steam_discovery(client, limit=160, max_age_days=30, now=None):
+    """Find genuine recent releases by release-date listing, NOT popularity charts.
+
+    Steam's store rows supply dates, which we validate before saving candidates.
+    Metadata is cross-checked through appdetails where available.
+    """
+    import time
+    now=now or time.time();games={};errors=[]
+    # Steam's own chronological store search; avoid Popular New Releases,
+    # which mixes in long-running titles, bundles, and older top sellers.
+    for start in (0,50,100):
         try:
-            r=await client.get('https://store.steampowered.com/search/',params=params)
+            r=await client.get('https://store.steampowered.com/search/',
+                 params={'sort_by':'Released_DESC','category1':'998','os':'win',
+                         'ignore_preferences':'1','start':str(start),'count':'50'})
             r.raise_for_status();soup=BeautifulSoup(r.text,'html.parser')
-            for a in soup.select('a.search_result_row')[:65]:
+            for a in soup.select('a.search_result_row')[:60]:
                 gid=str(a.get('data-ds-appid') or '')
                 if not gid.isdigit():continue
-                title=a.select_one('.title')
-                if not title:continue
+                title=a.select_one('.title');date=a.select_one('.search_released')
+                if not title or not date:continue
+                released=date.get_text(' ',strip=True)
+                dateval=parse_date(released)
+                if not dateval or not recent({'created_at':released}, now, max_age_days):continue
                 image=a.select_one('img')
                 games[gid]={'platform':'steam','gid':gid,'name':title.get_text(' ',strip=True),
+                            'created_at':dateval.date().isoformat(),
                             'image':image.get('src','') if image else '',
                             'url':f'https://store.steampowered.com/app/{gid}/'}
-        except (httpx.HTTPError,ValueError) as exc:errors.append('Steam discovery: '+str(exc)[:95])
+        except (httpx.HTTPError,ValueError) as exc:
+            errors.append('Steam recent releases: '+str(exc)[:95])
     return list(games.values())[:limit],errors
 
 async def steam_player(client,game):

@@ -14,3 +14,6 @@ IMPORTANT: Public code CAN be copied by others. Your encrypted observations cann
 be decrypted without your strong key; the code itself is not private.
 
 See README.md for detailed instructions and limitations.
+
+
+MANUAL DISCORD SHARING: Click any game in the unlocked LIVE website, click Send to my Discord, and paste a short-lived fine-grained GitHub token restricted to this repository with Actions: Read and write. After the first send, the token stays only in tab memory (never on the server or in the repo). See README.md.

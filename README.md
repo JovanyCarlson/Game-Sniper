@@ -1,4 +1,4 @@
-# GameSniper — Free encrypted Roblox + Steam breakout monitor
+# GameSniper — Fresh Game Breakout Sniper (v2.1)
 
 GameSniper polls public Roblox and Steam game statistics through scheduled GitHub Actions, calculates growth across 15m / 1h / 6h / 24h, sends private Discord webhook embeds, and hosts a dark dashboard on GitHub Pages. **The repository and website are public, but all actual scan results and alert history are encrypted with AES-256-GCM.** Without your private 256-bit key, visitors only see a locked dashboard or fictional demo mode. Public code can still be copied; this protects YOUR observations, not exclusive ownership of the source code.
 
@@ -45,3 +45,24 @@ GitHub Actions, Python 3.12, `httpx`, `beautifulsoup4`, `cryptography`, AES-256-
 To run tests locally: `python -m pip install -r requirements.txt` then `python -m unittest discover -s tests -v`.
 
 No affiliations with Roblox, Steam, Valve, GitHub, or Discord.
+
+
+## v2.1: Fresh games only (no top-game pollution)
+
+The scanner now prioritizes newly created Roblox experiences and newly released Steam games instead of huge top charts. `config.json` defines `discovery.roblox_max_age_days` and `discovery.steam_max_age_days` (default: 30 days). These are hard date-based eligibility filters on server-side samples and Discord notifications, not just visual filters. Games without a verifiable creation/release date are withheld from the live breakout lists until the date can be retrieved. Previously tracked older games are removed from displayed results on the next completed scan; no secret rotation is needed.
+
+**Overview** shows only confirmed growth signals among new games. **Discover** includes fresh candidates even before enough history exists to calculate 1h/6h/24h growth. Sorting by active player count is optional, not the primary feed. Steam new-release discovery uses a release-date sorted store search; Roblox uses rotating searches and emerging recommendation sorts when available, and then validates actual game creation dates with the Roblox Games API.
+
+**Discovery limits:** Roblox has no complete public real-time chronological feed of every new experience. This tool monitors the subset its searches and eligible sorts surface, so it cannot guarantee the very first discovery of every breakout. Steam search also depends on store markup and may be affected by regional/age filters. The health view displays source errors; no stats are fabricated.
+
+## v2.2: Click a game → Send to my Discord (owner-only)
+
+The live encrypted dashboard now has **Send to my Discord** on every game-details view (and a shortcut in desktop game tables). Clicking it queues an independent GitHub Actions job that sends the selected game using the **existing secret Discord webhook**. The webhook is never sent to your browser or published. Each embed still includes a clickable game name, active players (refreshed when possible), creation/release date, Roblox visits/approval ratio or Steam review ratings, and 15m/1h/6h/24h changes. Manual sharing also works for recent games with no breakout signal yet.
+
+**One-time setup per browser tab:** Make a fine-grained GitHub PAT at https://github.com/settings/personal-access-tokens/new with the resource owner `JovanyCarlson`, **Only select repositories → Game-Sniper**, **Repository permissions → Actions: Read and write**, plus GitHub's required Metadata read access. Choose a short expiration. Paste it into the on-page prompt when you first click Send. The token is held in temporary JS memory only and is not saved to disk, localStorage, browser URL, GitHub source, or sent to Discord. Don't share it or put it in GitHub Actions secrets. Clear the tab to discard it, and revoke it at GitHub when no longer needed.
+
+The website sends an authenticated POST directly to GitHub's workflow dispatch API. GitHub returns an acceptance status when a run is queued, **not a guarantee of successful Discord delivery**. If the job fails, review https://github.com/JovanyCarlson/Game-Sniper/actions/workflows/manual-discord.yml. Only repository owners/collaborators with Actions write permission can invoke it.
+
+**Privacy:** The workflow input is an opaque HMAC-SHA256 game selector computed locally from your existing private 32-byte dashboard key. GitHub's public workflow logs/inputs do NOT contain your game name, game URL, id, or encryption key. The job looks up the selector against the encrypted state and refuses unknown games. No `pull_request` or `issues` event can trigger this job. The website stays static with no backend server to leak your secrets. The selector is not a password; keep your encryption key and GitHub PAT private.
+
+**Browser caveat:** The GitHub REST endpoint requires CORS support for your browser-origin request. If your browser blocks the direct POST or GitHub changes its CORS policy, the site shows a network error and the send will NOT be queued. No insecure webhook-in-browser fallback is provided.

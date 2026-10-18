@@ -9,3 +9,22 @@
 .lock-panel button.subtle-btn{background:none;color:#79e7bd;border:0;padding:3px 0;cursor:pointer}
 .lock-panel a{color:#7ee5be}.lock-separator{height:1px;background:#274036;margin:22px 0}.lock-help{font-size:11px!important}
 #unlock-message{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;color:#f7b89e;line-height:1.5}
+
+/* Owner-only manual Discord send */
+.send-button,.send-small{cursor:pointer;white-space:nowrap;border-radius:8px;border:1px solid #267e65;background:#173f33;color:#81f3c4;font-weight:750;min-height:34px;padding:9px 13px}
+.send-small{padding:7px 10px;font-size:11px;min-height:30px}
+.send-button:hover,.send-small:hover{filter:brightness(1.2)}
+.send-button:disabled{opacity:.55;cursor:wait}
+.send-status{font:12px/1.6 var(--mono);color:#7aefc0;min-height:18px;margin:12px 0 0}
+.send-error{color:#f3b0a6!important}
+.token-panel{width:min(480px,100%);background:#111d27;border:1px solid #2b5147;border-radius:16px;padding:25px;box-shadow:0 24px 80px #000b}
+.token-panel h2{font-size:21px;margin:0 0 12px}
+.token-panel p{font:13px/1.6 system-ui,sans-serif;color:#b9cbd0;margin:10px 0}
+.token-panel a{color:#77efc0;text-decoration:underline}
+.token-panel label{font:12px/1.5 system-ui,sans-serif;display:block;margin-top:17px;margin-bottom:6px}
+.token-panel input{width:100%;box-sizing:border-box;border:1px solid #466259;border-radius:7px;background:#0c151c;color:#fff;padding:12px;font:12px monospace}
+.send-actions{display:flex;gap:12px;justify-content:end;margin-top:16px}
+.send-cancel{border:1px solid #42505c;border-radius:7px;background:transparent;color:#d3dcde;padding:10px 13px;cursor:pointer}
+@media(max-width:650px){.game-table th:nth-child(8),.game-table td:nth-child(8){display:none}}
+
+.discord-toast{position:fixed;bottom:23px;right:20px;z-index:900;max-width:min(400px,calc(100vw - 40px));padding:14px 17px;border-radius:10px;border:1px solid #29694c;background:#0c2a22;color:#a2f5ce;box-shadow:0 8px 32px #0009;font:12px/1.55 system-ui,sans-serif}

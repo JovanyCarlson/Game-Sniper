@@ -6,6 +6,7 @@ import httpx
 from . import sources
 from .discord import build_embed
 from .scoring import evaluate
+from .freshness import breakout_candidate, days_old
 
 ROOT=Path(__file__).resolve().parent.parent
 from .privacy import read_bundle, write_bundle, get_key
@@ -14,7 +15,7 @@ CONFIG=ROOT/'config.json'
 
 def load_config():
     raw=json.loads(CONFIG.read_text(encoding='utf-8'))
-    raw.setdefault('scan',{});raw.setdefault('alerts',{});raw.setdefault('watchlist',{})
+    raw.setdefault('scan',{});raw.setdefault('alerts',{});raw.setdefault('watchlist',{});raw.setdefault('discovery',{})
     private_watchlist = os.environ.get('GAMESNIPER_PRIVATE_WATCHLIST_JSON', '').strip()
     if private_watchlist:
         data = json.loads(private_watchlist)
@@ -94,20 +95,24 @@ def apply_metric(state,metric,now):
     record['signal']=evaluate(history,now)
     return record
 
-def qualify(record, config):
+def qualify(record, config, now=None):
+    now=now or time.time()
+    if not breakout_candidate(record, now, config.get('discovery',{})):return False
+    max_active=config.get('discovery',{}).get('max_active_players',15000)
+    if max_active and record.get('players',0)>int(max_active):return False
     signal=record.get('signal') or {}; tier=signal.get('tier','monitoring')
     if tier not in ('scout','breakout','viral'):return False
     settings=config['alerts']
     if tier=='scout' and not settings.get('include_scout',True):return False
-    g=signal.get('windows',{}).get('15m') or signal.get('windows',{}).get('1h')
-    return bool(g and g['delta']>=int(settings.get('minimum_player_gain',35))
-        and g['percent']>=float(settings.get('minimum_growth_percent',60)))
+    candidates=[signal.get('windows',{}).get(w) for w in ('15m','1h')]
+    return any(g and g['delta']>=int(settings.get('minimum_player_gain',35))
+        and g['percent']>=float(settings.get('minimum_growth_percent',60)) for g in candidates)
 
 def pending_alerts(state,config,now):
     rank={'scout':1,'breakout':2,'viral':3}
     result=[];cooldown=int(config['alerts'].get('cooldown_minutes',120))*60
     for key,game in state['games'].items():
-        if not game.get('last_polled') or now-game['last_polled']>600 or not qualify(game,config):continue
+        if not game.get('last_polled') or now-game['last_polled']>600 or not qualify(game,config,now):continue
         tier=game['signal']['tier'];previous=game.get('last_alert') or {}
         if previous and now-previous.get('time',0)<cooldown and rank.get(tier,0)<=rank.get(previous.get('tier'),0):continue
         result.append((key,game))
@@ -119,17 +124,23 @@ async def publish_alert(client,url,game,config,now):
     r.raise_for_status()
     return payload
 
-def to_public(state,now):
+def to_public(state,now,config=None):
+    config=config or load_config()
     games=[]
     for game in state['games'].values():
-        if not game.get('last_polled'):continue
+        if not game.get('last_polled') or not breakout_candidate(game,now,config.get('discovery',{})):continue
+        cap=config.get('discovery',{}).get('max_active_players',15000)
+        if cap and game.get('players',0)>int(cap):continue
         clean={key:game.get(key) for key in ('platform','gid','name','url','image','players','visits','favorites',
             'created_at','up_votes','down_votes','positive_reviews','negative_reviews','rating_label','discovered','last_polled')}
         clean['signal']=game.get('signal') or evaluate(game.get('history',[]),now)
         clean['history']=game.get('history',[])
         games.append(clean)
-    games.sort(key=lambda g:(g.get('signal',{}).get('score',0),g.get('players') or 0),reverse=True)
-    return {'version':2,'generated_at':now,'mode':'live','games':games[:450],
+    games.sort(key=lambda g:(g.get('signal',{}).get('tier') in ('scout','breakout','viral'),
+        g.get('signal',{}).get('score',0),
+        max([w.get('percent',0) for w in (g.get('signal',{}).get('windows') or {}).values() if w] or [0])), reverse=True)
+    return {'version':2,'generated_at':now,'mode':'live','focus':'new_breakouts',
+            'max_age_days':config.get('discovery',{}), 'games':games[:450],
             'alerts':state.get('alerts',[])[-80:][::-1],
             'status':{'tracked':len(games),'last_scan':state['meta'].get('last_scan'),
                       'successful_games':state['meta'].get('successful_games',0),
@@ -147,12 +158,27 @@ async def run_once(config=None, state=None, client=None, now=None, discover=None
         # Discovery every 15 minutes, on first run, or when only a few candidates remain.
         scan_count=int(state['meta'].get('scan_count',0))
         discover = (scan_count % 3==0) if discover is None else discover
-        found=[]
+        found=[];fresh_roblox_metrics=[]
+        discovery_config=config.get('discovery',{})
         if discover:
-            for coro in (sources.roblox_discovery(client),sources.steam_discovery(client)):
-                try:
-                    games,issues=await coro;found+=games;errors+=issues
-                except Exception as exc:errors.append(f'Discovery unavailable: {type(exc).__name__}: {str(exc)[:90]}')
+            try:
+                games,issues=await sources.roblox_discovery(client)
+                errors+=issues
+                # Verify ALL Roblox discovery candidates against creation dates BEFORE
+                # tracking. A top-chart entry is never considered new by default.
+                candidate_ids=[g['gid'] for g in games if g.get('gid','').isdigit()]
+                details,issues=await sources.roblox_metrics(client,candidate_ids)
+                errors+=issues
+                fresh_roblox_metrics=[m for m in details if breakout_candidate(m,now,discovery_config)]
+                found+=fresh_roblox_metrics
+            except Exception as exc:
+                errors.append('Roblox early discovery failed: '+type(exc).__name__+': '+str(exc)[:85])
+            try:
+                games,issues=await sources.steam_discovery(client,
+                    max_age_days=int(discovery_config.get('steam_max_age_days',30)), now=now)
+                found+=games;errors+=issues
+            except Exception as exc:
+                errors.append('Steam early discovery failed: '+type(exc).__name__+': '+str(exc)[:85])
         for gid in pinned['roblox']:
             found.append({'platform':'roblox','gid':gid})
         for gid in pinned['steam']:
@@ -163,9 +189,18 @@ async def run_once(config=None, state=None, client=None, now=None, discover=None
                 pinned['roblox'].add(uid);found.append({'platform':'roblox','gid':uid})
             except Exception as exc:errors.append(f'Roblox place {placeid}: {type(exc).__name__}')
         merge_candidates(state,found,now,int(config['scan'].get('candidate_limit',450)))
+        # Discard old known titles from previous versions and new discovery.
+        # Keep undated candidates briefly only until we can verify their creation.
+        state['games']={key:g for key,g in state['games'].items()
+            if breakout_candidate(g,now,discovery_config) or
+            (days_old(g,now) is None and now-g.get('discovered',now)<24*3600)}
+        # Fresh discoveries start a legitimate history immediately; no invented deltas.
+        for metric in fresh_roblox_metrics:
+            if 'roblox:'+metric['gid'] in state['games']:
+                apply_metric(state,metric,now);successful+=1
         selected={}
         for platform,limit_key,limit_default in [('roblox','roblox_limit',110),('steam','steam_limit',35)]:
-            pool=[g for g in state['games'].values() if g['platform']==platform]
+            pool=[g for g in state['games'].values() if g['platform']==platform] 
             selected[platform]=priority_select(pool,pinned[platform],int(config['scan'].get(limit_key,limit_default)),
                             int(config['scan'].get('new_per_cycle',40)),now)
         try:
@@ -201,7 +236,7 @@ async def run_once(config=None, state=None, client=None, now=None, discover=None
         state['alerts']=state['alerts'][-120:]
         state['meta']={'last_scan':now,'successful_games':successful,'errors':errors[:16],
                        'webhook_configured':bool(webhook), 'scan_count':scan_count+1}
-        return state,to_public(state,now)
+        return state,to_public(state,now,config)
     finally:
         if own_client:await client.aclose()
 
