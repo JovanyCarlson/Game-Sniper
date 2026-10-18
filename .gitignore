@@ -7,3 +7,10 @@ __pycache__/
 .pytest_cache/
 *.log
 .DS_Store
+
+# Never publish plaintext scans or private configuration.
+data/*.json
+docs/data.json
+*.sqlite3
+*.sqlite3-*
+__pycache__/

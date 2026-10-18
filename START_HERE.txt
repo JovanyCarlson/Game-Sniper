@@ -1,0 +1,16 @@
+GAME SNIPER — SAFE PUBLIC REPOSITORY / PRIVATE DATA SETUP
+
+This public repo contains NO real tracking history, NO API key, and NO webhook.
+Your actual data gets encrypted before being committed.
+
+1) Repository Settings > Pages > Source: GitHub Actions.
+2) Open the hosted Pages URL and generate a random encryption key on the unlock screen.
+3) Save the key privately. Add GitHub Actions secret GAMESNIPER_STATE_KEY.
+4) Add GitHub Actions secret DISCORD_WEBHOOK_URL (private channel webhook).
+5) GitHub Actions > GameSniper - encrypted 24/7 radar > Run workflow.
+6) Unlock dashboard with your same key. Never paste it in public files.
+
+IMPORTANT: Public code CAN be copied by others. Your encrypted observations cannot
+be decrypted without your strong key; the code itself is not private.
+
+See README.md for detailed instructions and limitations.
