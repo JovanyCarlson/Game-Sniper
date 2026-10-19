@@ -115,7 +115,13 @@ async function sendSelected(){
 }
 $('#authorize-send').addEventListener('click',async()=>{
  const token=$('#send-discord-token').value.trim();
- if(!/^(github_pat_|ghp_)[A-Za-z0-9_]+$/.test(token)){$('#send-dialog-message').textContent='Use a valid GitHub fine-grained token.';return;}
+ if(!/^(github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{30,})$/.test(token)){
+  const looksLikeEncryptionKey=/^[A-Za-z0-9+/]{43}=$/.test(token);
+  $('#send-dialog-message').textContent=looksLikeEncryptionKey
+   ? 'This looks like your encryption key, not a GitHub token. Keep the encryption key private; create a separate GitHub fine-grained token beginning with github_pat_.'
+   : 'Enter a GitHub Personal Access Token starting with github_pat_. Create it with repository access to Game-Sniper and Actions: Read and write. Do NOT use the encryption key or Discord webhook here.';
+  return;
+ }
  workflowToken=token;$('#send-discord-token').value='';
  try{await sendSelected();}catch(error){$('#send-discord-dialog').classList.remove('hidden');$('#send-dialog-message').textContent=error.message;}
 });
