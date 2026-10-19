@@ -26,7 +26,7 @@
  <div class="token-panel">
   <h2 id="send-dialog-title">Send this game to Discord</h2>
   <p>To send only as the repository owner, GitHub requires a <b>fine-grained personal access token</b> scoped only to <code>JovanyCarlson/Game-Sniper</code> with <b>Actions: Read and write</b>.</p>
-  <p>Generate one at <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Fine-grained personal access tokens ↗</a>. Give it a short expiration. Do not paste it in chat or save it in the public repository.</p>
+  <p><strong>This is NOT your GAMESNIPER_STATE_KEY or Discord webhook.</strong> Create a separate fine-grained GitHub token at <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → New fine-grained token ↗</a>. Select resource owner JovanyCarlson, only the Game-Sniper repository, and Actions: Read and write. The token will begin with <code>github_pat_</code>. Use a short expiration; never post it or commit it.</p>
   <label for="send-discord-token">GitHub token (stays in this tab only)</label>
   <input id="send-discord-token" type="password" spellcheck="false" autocomplete="off" placeholder="github_pat_...">
   <p id="send-dialog-message" class="send-error" role="status"></p>
